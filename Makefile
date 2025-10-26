@@ -1,16 +1,19 @@
-all: gen compile
+program-args := --syscalls execve --filename ls,echo,iptables
+
+all: clean run
 .PHONY: all 
 
-gen: sync
+run: compile
+	sudo ./tracepoint_execve $(program-args)
+
+compile: gen
+	go build -o tracepoint_execve
+
+gen:
 	go generate
 
-compile: sync
-	go build -o kprobe_reader
-
-clean: sync
+clean:
 	- rm ebpf_bpf*.go
 	- rm ebpf_bpf*.o
-	- rm kprobe_reader
+	- rm tracepoint_execve
 
-sync:
-	cp -r /Users/igorlopes/Documents/personal/ebpf-sample ~/projects/

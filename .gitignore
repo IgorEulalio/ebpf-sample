@@ -2,8 +2,10 @@
 ebpf_bpf*.go
 ebpf_bpf*.o
 
-# Compiled binary
+# Compiled binaries
 trace_readline
+kprobe_reader
+tracepoint_execve
 
 # Go build artifacts
 *.exe

@@ -4,9 +4,12 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"flag"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/cilium/ebpf/link"
@@ -15,14 +18,52 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -type event ebpf kprobe.c
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -type event ebpf execve_exit.c
 
-const (
-	kprobeFunc = "sys_execve"
-)
+const version = "v0.1.0"
+
+type config struct {
+	syscalls        []string
+	filterFilenames []string
+}
+
+func parseFlags() *config {
+	cfg := &config{}
+
+	syscallsFlag := flag.String("syscalls", "execve", "Comma-separated list of syscalls to trace (currently only execve is supported)")
+	filenameFlag := flag.String("filename", "", "Comma-separated list of filenames/paths to filter (e.g., ls,cat,/usr/bin/echo). Empty = show all")
+	flag.Parse()
+
+	if *syscallsFlag != "" {
+		cfg.syscalls = strings.Split(*syscallsFlag, ",")
+		// Trim whitespace from each syscall name
+		for i := range cfg.syscalls {
+			cfg.syscalls[i] = strings.TrimSpace(cfg.syscalls[i])
+		}
+	}
+
+	if *filenameFlag != "" {
+		cfg.filterFilenames = strings.Split(*filenameFlag, ",")
+		// Trim whitespace from each filename
+		for i := range cfg.filterFilenames {
+			cfg.filterFilenames[i] = strings.TrimSpace(cfg.filterFilenames[i])
+		}
+	}
+
+	return cfg
+}
 
 func main() {
-	log.SetPrefix("kprobe_reader: ")
+	cfg := parseFlags()
+
+	log.Printf("tracepoint_execve %s starting..", version)
+	log.Printf("Tracing syscalls: %v", cfg.syscalls)
+	if len(cfg.filterFilenames) > 0 {
+		log.Printf("Filtering by filenames: %v", cfg.filterFilenames)
+	} else {
+		log.Printf("Showing all executions (no filename filter)")
+	}
+	log.SetPrefix("tracepoint_execve: ")
 	log.SetFlags(log.Ltime)
 
 	// Subscribe to signals for terminating the program.
@@ -41,14 +82,33 @@ func main() {
 	}
 	defer objs.Close()
 
-	// Open a Kprobe at the entry point of the kernel function and attach the
-	// pre-compiled program. Each time the kernel function enters, the program
-	// will emit an event containing pid and command of the execved task.
-	kp, err := link.Kprobe(kprobeFunc, objs.HelloExecve, nil)
-	if err != nil {
-		log.Fatalf("opening kprobe: %s", err)
+	// Attach tracepoints for each syscall (both entry and exit)
+	var tracepoints []link.Link
+	for _, syscallName := range cfg.syscalls {
+		// Attach entry tracepoint to capture filename
+		entryName := "sys_enter_" + syscallName
+		tpEntry, err := link.Tracepoint("syscalls", entryName, objs.TracepointExecveEnter, nil)
+		if err != nil {
+			log.Fatalf("opening entry tracepoint for %s: %s", syscallName, err)
+		}
+		tracepoints = append(tracepoints, tpEntry)
+		log.Printf("Attached to tracepoint: syscalls/%s", entryName)
+
+		// Attach exit tracepoint to emit events
+		exitName := "sys_exit_" + syscallName
+		tpExit, err := link.Tracepoint("syscalls", exitName, objs.TracepointExecveExit, nil)
+		if err != nil {
+			log.Fatalf("opening exit tracepoint for %s: %s", syscallName, err)
+		}
+		tracepoints = append(tracepoints, tpExit)
+		log.Printf("Attached to tracepoint: syscalls/%s", exitName)
 	}
-	defer kp.Close()
+	// Close all tracepoints on exit
+	defer func() {
+		for _, tp := range tracepoints {
+			tp.Close()
+		}
+	}()
 
 	// Open a ringbuf reader from userspace RINGBUF map described in the
 	// eBPF C program.
@@ -89,6 +149,36 @@ func main() {
 			continue
 		}
 
-		log.Printf("pid: %d\tcomm: %s\n", event.Pid, unix.ByteSliceToString(event.Comm[:]))
+		filename := unix.ByteSliceToString(event.Filename[:])
+		comm := unix.ByteSliceToString(event.Comm[:])
+
+		// Try to get the full path from /proc/<pid>/exe
+		fullPath := filename
+		procExePath := fmt.Sprintf("/proc/%d/exe", event.Pid)
+		if resolvedPath, err := os.Readlink(procExePath); err == nil {
+			fullPath = resolvedPath
+		}
+
+		// Apply filename filtering if configured
+		if len(cfg.filterFilenames) > 0 {
+			matched := false
+			// Check if any of the filter patterns match
+			for _, filter := range cfg.filterFilenames {
+				if strings.Contains(fullPath, filter) ||
+				   strings.Contains(filename, filter) ||
+				   strings.Contains(comm, filter) {
+					matched = true
+					break
+				}
+			}
+			if !matched {
+				continue // Skip this event
+			}
+		}
+
+		log.Printf("pid: %d\tcomm: %s\tpath: %s\n",
+			event.Pid,
+			comm,
+			fullPath)
 	}
 }
