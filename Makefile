@@ -1,6 +1,6 @@
 PROGRAM_ARGS := --syscalls execve --filename ls,echo,iptables
 
-all: clean run
+all: clean compile
 .PHONY: all 
 
 run: compile
