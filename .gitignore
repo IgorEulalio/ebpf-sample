@@ -1,0 +1,27 @@
+# eBPF generated files
+ebpf_bpf*.go
+ebpf_bpf*.o
+
+# Compiled binary
+trace_readline
+
+# Go build artifacts
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Go test artifacts
+*.test
+*.out
+
+# Go coverage
+*.cover
+*.coverprofile
+
+# Dependency directories
+vendor/
+
+# CLAUDE.md (AI-generated documentation)
+CLAUDE.md
