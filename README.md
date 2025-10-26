@@ -20,6 +20,8 @@ sudo apt install -y \
 
 ## Build
 
+Preferably run this in a linux box like Lima, Vagrant, etc.
+
 ```bash
 make
 ```
@@ -34,6 +36,11 @@ sudo ./tracepoint_execve
 sudo ./tracepoint_execve --filename ls,cat,grep
 ```
 
+## Testing
+Open another terminal in the same VM:
+```
+ls -lha /root
+```
 ## Example Output
 
 ```
