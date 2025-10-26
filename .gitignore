@@ -27,3 +27,4 @@ vendor/
 
 # CLAUDE.md (AI-generated documentation)
 CLAUDE.md
+.idea/

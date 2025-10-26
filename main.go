@@ -159,14 +159,27 @@ func main() {
 			fullPath = resolvedPath
 		}
 
+		// Try to get arguments from /proc/<pid>/cmdline
+		var cmdlineArgs []string
+		cmdlinePath := fmt.Sprintf("/proc/%d/cmdline", event.Pid)
+		if cmdlineData, err := os.ReadFile(cmdlinePath); err == nil {
+			// /proc/pid/cmdline contains null-terminated strings
+			args := strings.Split(string(cmdlineData), "\x00")
+			for _, arg := range args {
+				if arg != "" {
+					cmdlineArgs = append(cmdlineArgs, arg)
+				}
+			}
+		}
+
 		// Apply filename filtering if configured
 		if len(cfg.filterFilenames) > 0 {
 			matched := false
 			// Check if any of the filter patterns match
 			for _, filter := range cfg.filterFilenames {
 				if strings.Contains(fullPath, filter) ||
-				   strings.Contains(filename, filter) ||
-				   strings.Contains(comm, filter) {
+					strings.Contains(filename, filter) ||
+					strings.Contains(comm, filter) {
 					matched = true
 					break
 				}
@@ -176,9 +189,32 @@ func main() {
 			}
 		}
 
-		log.Printf("pid: %d\tcomm: %s\tpath: %s\n",
+		// Build arguments string - prefer /proc cmdline, fallback to eBPF captured args
+		var argsList []string
+
+		// First, try using arguments from /proc (most reliable)
+		if len(cmdlineArgs) > 0 {
+			argsList = cmdlineArgs
+		} else if event.Argc > 0 {
+			// Fallback to eBPF-captured arguments
+			for i := uint32(0); i < event.Argc && i < 5; i++ {
+				arg := unix.ByteSliceToString(event.Args[i][:])
+				if arg != "" {
+					argsList = append(argsList, arg)
+				}
+			}
+		}
+
+		// Format args string
+		argsStr := "<none>"
+		if len(argsList) > 0 {
+			argsStr = strings.Join(argsList, " ")
+		}
+
+		log.Printf("pid: %d\tcomm: %s\tpath: %s\tcomm_with_args: [%s]\n",
 			event.Pid,
 			comm,
-			fullPath)
+			fullPath,
+			argsStr)
 	}
 }

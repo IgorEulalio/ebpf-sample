@@ -1,4 +1,4 @@
-program-args := --syscalls execve --filename ls,echo,iptables
+PROGRAM_ARGS := --syscalls execve --filename ls,echo,iptables
 
 all: clean run
 .PHONY: all 
