@@ -189,26 +189,10 @@ func main() {
 			}
 		}
 
-		// Build arguments string - prefer /proc cmdline, fallback to eBPF captured args
-		var argsList []string
-
-		// First, try using arguments from /proc (most reliable)
-		if len(cmdlineArgs) > 0 {
-			argsList = cmdlineArgs
-		} else if event.Argc > 0 {
-			// Fallback to eBPF-captured arguments
-			for i := uint32(0); i < event.Argc && i < 5; i++ {
-				arg := unix.ByteSliceToString(event.Args[i][:])
-				if arg != "" {
-					argsList = append(argsList, arg)
-				}
-			}
-		}
-
-		// Format args string
+		// Build arguments string from /proc cmdline
 		argsStr := "<none>"
-		if len(argsList) > 0 {
-			argsStr = strings.Join(argsList, " ")
+		if len(cmdlineArgs) > 0 {
+			argsStr = strings.Join(cmdlineArgs, " ")
 		}
 
 		log.Printf("pid: %d\tcomm: %s\tpath: %s\tcomm_with_args: [%s]\n",
