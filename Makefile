@@ -1,10 +1,10 @@
-PROGRAM_ARGS := --syscalls execve --filename ls,echo,iptables
+PROGRAM_ARGS := --syscalls execve --filename ls,cat,rm
 
 all: clean compile
 .PHONY: all 
 
 run: compile
-	sudo ./tracepoint_execve $(program-args)
+	sudo ./tracepoint_execve $(PROGRAM_ARGS)
 
 compile: gen
 	go build -o tracepoint_execve
